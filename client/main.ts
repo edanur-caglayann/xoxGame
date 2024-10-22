@@ -143,9 +143,6 @@ import {
     
     console.log("Player PDA => " + playerPda[0].toString())
     console.log(player_count_data_deserialize.player_count.toString())
-    const data = await connection.getAccountInfo(playerPda[0])
-    console.log(data!.data.buffer)
-
 
   }
 
@@ -157,8 +154,6 @@ import {
         [Buffer.from("player"), Buffer.from(player_address)],
         program_id
     );
-    console.log(player_count_data_deserialize.player_count.toString())
-    console.log("Player PDA => " + playerPda[0].toString())
 
     const player_data = await connection.getAccountInfo(playerPda[0]);
 
@@ -168,9 +163,12 @@ import {
     }
 
     const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
+    console.log("Player PDA => " + playerPda[0].toString())
+    console.log("Player Count => " +player_count_data_deserialize.player_count.toString())
     console.log("Game Id -> " + player_data_deserialize.game_id);
     console.log("Player Address -> " + player_data_deserialize.player_address);
     console.log("Wins -> " + player_data_deserialize.wins);
+    console.log("--------------------------------------------------------------------------------------------")
   }
 
   const create_game_acc = async(data:JoinGame) => {
@@ -223,9 +221,9 @@ import {
 
   const transactionn = await connection.sendTransaction(tx);
     
-  console.log(" -> " +transactionn)
+ 
   console.log("Game PDA => " + gamePda[0].toString());
-  console.log(game_id_data_deserialize.game_id.toString())
+  console.log("Game id => " + game_id_data_deserialize.game_id.toString())
   }
 
   const game_read = async(player_address:Uint8Array) => {
@@ -270,6 +268,8 @@ import {
     console.log("Turn -> " + game_data_deserialize.turn);
     console.log("Prize Pool -> " + game_data_deserialize.prize_pool);
     console.log("Game Active -> " + game_data_deserialize.game_active);
+    console.log("--------------------------------------------------------------------------------------------")
+
   }
 
   const get_not_player2 = async() => {
@@ -289,10 +289,10 @@ import {
     const game_id_data_deserialize = deserialize(GameIdSchema, GameId, game_id_data!.data);
     
     const player_count_data = await connection.getAccountInfo(player_count);
-    if (!player_count_data || !player_count_data.data) {
+    if (!player_count_data) {
       throw new Error("Player count data is null or empty");
     }
-    const player_count_data_deserialize = deserialize(PlayerCountSchema, PlayerCount, player_count_data.data);
+    const player_count_data_deserialize = deserialize(PlayerCountSchema, PlayerCount, player_count_data!.data);
   
     const playerPda = PublicKey.findProgramAddressSync(
       [Buffer.from("player"), Buffer.from(join_data.player_address)],
@@ -300,22 +300,23 @@ import {
     );
   
     const player_data = await connection.getAccountInfo(playerPda[0]);
-    if (!player_data || !player_data.data) {
+    if (!player_data) {
       throw new Error("Player data is null or empty");
     }
 
-    const player_data_deserialize = deserialize(PlayerSchema, Player, player_data.data);
+    const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
   
     const gamePda = PublicKey.findProgramAddressSync(
       [Buffer.from("game"), Buffer.from(player_data_deserialize.player_address)],
       program_id
     );
-  
-    const game_data = await connection.getAccountInfo(gamePda[0]);
-    if (!game_data || !game_data.data) {
+
+   const game_data = await connection.getAccountInfo(gamePda[0]);
+    if (!game_data) {
       throw new Error("Game data is null or empty");
     }
-    const game_data_deserialize = deserialize(GameSchema, Game, game_data.data);
+
+    const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
   
     const instruction = new TransactionInstruction({
       keys: [
@@ -481,8 +482,11 @@ import {
    
     // console.log("=> " + player2Wallet.publicKey)
    
+    // create_player_acc(player1Wallet.publicKey.toBytes());
     // create_player_acc(player2Wallet.publicKey.toBytes());
 
+
+    // player_read(player1Wallet.publicKey.toBytes())
     // player_read(player2Wallet.publicKey.toBytes())
 
     // game_read(player1Wallet.publicKey.toBytes())
@@ -491,13 +495,12 @@ import {
     join_game.deposit_amount = BigInt(0.0001 * 1_000_000_000);
     join_game.player_address = player1Wallet.publicKey.toBytes();
 
-    create_game_acc(join_game)
+    // create_game_acc(join_game)
 
   const joinPlayer2 = new JoinGame();
   joinPlayer2.player_address = player2Wallet.publicKey.toBytes();
   joinPlayer2.deposit_amount =  BigInt(0.0001 * 1_000_000_000);
 
-  
-  // join_game_acc(joinPlayer2)
+  join_game_acc(joinPlayer2)
   // close_pda()
 

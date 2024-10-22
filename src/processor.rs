@@ -144,8 +144,9 @@ use solana_program::{
       msg!("3");
       msg!("{}", payer.key.to_string());
       
-  
-      invoke_signed(
+      // hesap bossa yeni hesap olusturcaz
+      if player.data_is_empty() {
+        invoke_signed(
           &system_instruction::create_account(
               payer.key,
               &player_pda,
@@ -157,14 +158,20 @@ use solana_program::{
           &[&[b"player",&player_address, &[bump]]],
       )?;
 
-      msg!("4");
-     
+      msg!("New player account created.");
+      }
+      // pda zaten mevcutsa
+      else{
+        msg!("Player account already exists, skipping creation.");
+      }
+           
       let player_info = Player {
           game_id: game_id_account_read.game_id,
           player_address:player_address,
           wins: 0,
       };
-      msg!("5");
+
+      msg!("4");
     
       game_id_account_read.serialize(&mut &mut game_id.try_borrow_mut_data()?[..])?;
       player_count_read.serialize(&mut &mut player_count.try_borrow_mut_data()?[..])?;
@@ -204,12 +211,8 @@ use solana_program::{
           return Err(ProgramError::InvalidArgument);
       }
 
-      msg!("{}", Pubkey::new_from_array(data.player_address).to_string());
-
-      msg!("{}",  Pubkey::new_from_array(player_read.player_address).to_string());
-
-      msg!("3");
-      
+      // ilk oyuncunun adresi
+      msg!("Player 1 Address: {}", Pubkey::new_from_array(data.player_address).to_string());
     
       if data.player_address != player_read.player_address{
         return Err(ProgramError::InvalidArgument);
@@ -218,26 +221,30 @@ use solana_program::{
       
     let rent = Rent::default();
     let game_rent = rent.minimum_balance(92);
-
     let totalLamports = game_rent.checked_add(data.deposit_amount).ok_or(ProgramError::InvalidArgument)?;
     
-    msg!("4");
       // let playeraddresfrombytes = Pubkey::new_from_array(player_read.player_address);
 
-    invoke_signed(
-        &system_instruction::create_account(
-            payer.key,
-            &game_pda,
-            totalLamports,
-            92,
-            program_id,
-        ),
-        &[game.clone(), payer.clone()],
-        &[&[b"game", &player_read.player_address, &[bump]]], 
-    )?;
- 
-    
-    msg!("5");
+      if game.data_is_empty() {
+        invoke_signed(
+          &system_instruction::create_account(
+              payer.key,
+              &game_pda,
+              totalLamports,
+              92,
+              program_id,
+          ),
+          &[game.clone(), payer.clone()],
+          &[&[b"game", &player_read.player_address, &[bump]]], 
+      )?;
+      msg!("New game account created.");
+      }
+
+      else{
+        msg!("Game account already exists, skipping creation.");
+
+      }
+   
 
     let mut game_info = Game {
         game_id: game_id_account_read.game_id,
@@ -246,14 +253,14 @@ use solana_program::{
         deposit_amount: data.deposit_amount,
         game_board: [[0; 3]; 3], // 3*3'lük boş tahta
         turn: 0,
-        prize_pool: data.deposit_amount.checked_mul(2).ok_or(ProgramError::InvalidArgument)?, 
+        prize_pool: data.deposit_amount, // odul havuznuna baslangicta 1. oyuncunun yatirdigi miktar ile baslar
         game_active: 0,
     };
-
+    // data.deposit_amount.checked_mul(2).ok_or(ProgramError::InvalidArgument)?, 
     msg!("6");
 
     
-    game_info.prize_pool = game_info.prize_pool.checked_add(data.deposit_amount).ok_or(ProgramError::InvalidArgument)?; 
+    // game_info.prize_pool = game_info.prize_pool.checked_add(data.deposit_amount).ok_or(ProgramError::InvalidArgument)?; 
 
     game_id_account_read.serialize(&mut &mut game_id_counter.try_borrow_mut_data()?[..])?;
     player_read.serialize(&mut &mut player.try_borrow_mut_data()?[..])?;
@@ -262,9 +269,7 @@ use solana_program::{
     Ok(())
       }
 
-       //plyaer account olusturduktan sonra cuzdan adresimi degistirmem lazim
-     // acc programa ait oldugunu nasil anliyoruz
-     //programa ait degilse imza atamsi gerekiyro 
+
       pub fn join_game (
         accounts: &[AccountInfo],
         program_id: &Pubkey,
@@ -274,44 +279,40 @@ use solana_program::{
         let payer = next_account_info(account_info_iter)?;
         let player = next_account_info(account_info_iter)?;
         let game = next_account_info(account_info_iter)?;
-        let game_id = next_account_info(account_info_iter)?;
-
-        let mut game_read = Game::try_from_slice(&game.data.borrow())?;
-        let player_read = Player::try_from_slice(&player.data.borrow())?;
-        let game_id_account_read = GameId::try_from_slice(&game_id.data.borrow())?;
 
         if !payer.is_signer {
          msg!("Payer is not a signer");
          return Err(ProgramError::MissingRequiredSignature);
         }
 
-        if game_read.game_active == 0 {
-          msg!("The game is not active");
-          return Err(ProgramError::MissingRequiredSignature);
+        let player_read = Player::try_from_slice(&player.data.borrow())?;
+
+        let (game_pda, _bump) = Pubkey::find_program_address(
+            &[b"game", &player_read.player_address],
+            program_id,
+        );
+
+        // pda ile game hesabi uyusuyor mu
+        if game_pda != *game.key {
+          msg!("Provided game account does not match derived PDA.");
+        return Err(ProgramError::InvalidArgument);
         }
 
-        if game_read.game_id != game_id_account_read.game_id {
-          msg!("Game id is not match");
-          return Err(ProgramError::MissingRequiredSignature);
-        }
-         
-        // 2. oyuncu oyuna katilir
-         if game_read.player2 == [0;32] {
-          game_read.player2 = player_read.player_address;
-          game_read.game_active = 1; // 2. oyuncu katildiktan sonra oyun baslar
-          msg!("Player 2 has joined the game. The game is now active.");
+        let mut game_info = Game::try_from_slice(&game.data.borrow())?;
+        
+         if game_info.player2 != [0;32] {
+          msg!("This game already has two players.");
+           return Err(ProgramError::InvalidArgument);
          }
          
-         // oyun doluysa baska oyuncu katilamaz
-         else {
-          msg!("The game already has two players. No more players can join.");
-          return Err(ProgramError::InvalidArgument);
-         }
-
          if data.deposit_amount <= 0 {
           msg!("Invalid deposit amount.");
           return Err(ProgramError::InvalidArgument);
-      }
+         }
+
+         game_info.player2 = player_read.player_address;
+         game_info.prize_pool = game_info.prize_pool.checked_add(data.deposit_amount).ok_or(ProgramError::InvalidArgument)?;
+        
          let transfer = system_instruction::transfer(
           payer.key, 
           game.key,
@@ -320,11 +321,12 @@ use solana_program::{
          invoke(
           &transfer,
            &[payer.clone(), game.clone()])?;
+         game_info.game_active = 1; // 2. oyuncu katildiktan sonra oyun aktif olur
 
         
-        player_read.serialize(&mut &mut player.try_borrow_mut_data()?[..])?;
-        game_read.serialize(&mut &mut game.try_borrow_mut_data()?[..])?;
-        game_id_account_read.serialize(&mut &mut game_id.try_borrow_mut_data()?[..])?;
+        game_info.serialize(&mut &mut game.try_borrow_mut_data()?[..])?;
+
+        msg!("Player 2 has joined the game. Game is now active!");
 
       Ok(())
        }
@@ -548,4 +550,11 @@ use solana_program::{
 
 
 
-       // game olusurken ve player 2 olusrken hata aliyorum
+       // game olusurken  hata aliyorum
+       // join game calismiyr
+       
+
+
+              //plyaer account olusturduktan sonra cuzdan adresimi degistirmem lazim
+     // acc programa ait oldugunu nasil anliyoruz
+     //programa ait degilse imza atamsi gerekiyro 
