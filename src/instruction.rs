@@ -1,4 +1,4 @@
-use crate::{error::RNGProgramError::InvalidInstruction, state::{Game, JoinGame, MakeMove, Player}, };
+use crate::{error::RNGProgramError::InvalidInstruction, state::{CreateGame, Game, JoinGame, MakeMove, Player}, };
 use borsh::BorshDeserialize;
 use solana_program::{msg, program_error::ProgramError};
 
@@ -7,7 +7,7 @@ pub enum RNGProgramInstruction {
   PlayerCount,
   GameId,
   CreatePlayer{player_address: [u8;32]},
-  CreateGame{join_data: JoinGame},
+  CreateGame{data: CreateGame},
   JoinGame {join_data: JoinGame},
   MakeMove {x:usize, y:usize},
   CheckWinner,
@@ -30,10 +30,10 @@ impl RNGProgramInstruction {
             }
         },
         3 => Self::CreateGame {
-            join_data: JoinGame::try_from_slice(&rest)?,
+            data: CreateGame::try_from_slice(&rest)?,
         },
         4 => Self::JoinGame {
-            join_data: JoinGame::try_from_slice(&rest)?,
+            join_data:JoinGame::try_from_slice(&rest)?,
         },
         5 => {
             let make_move_data = MakeMove::try_from_slice(&rest).map_err(|_| InvalidInstruction)?;

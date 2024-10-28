@@ -42,7 +42,13 @@ pub struct MakeMove{
 pub struct JoinGame{
     pub deposit_amount: u64, 
     pub player_address: [u8;32],
+    pub game_counter: u8,
+} 
 
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
+pub struct CreateGame{
+    pub deposit_amount: u64, 
+    pub player_address: [u8;32],
 } 
 
 

@@ -8,7 +8,7 @@ use num_bigint::BigInt;
 use solana_program::{ 
     account_info::{next_account_info, AccountInfo}, clock, config, entrypoint::ProgramResult, lamports, msg, program::{invoke, invoke_signed}, program_error::ProgramError, pubkey::{self, Pubkey}, rent::Rent, system_instruction::{self, transfer}, system_program, sysvar::Sysvar
     };
-    use crate::{instruction::RNGProgramInstruction, state::{Game, GameId, JoinGame, Player, PlayerCount}};
+    use crate::{instruction::RNGProgramInstruction, state::{CreateGame, Game, GameId, JoinGame, Player, PlayerCount}};
     use crate::error::RNGProgramError::{InvalidInstruction};
     pub struct Processor;
     impl Processor {
@@ -30,11 +30,11 @@ use solana_program::{
           RNGProgramInstruction::CreatePlayer {player_address}=> {
               Self::create_player(accounts, _program_id, player_address)
           },
-          RNGProgramInstruction::CreateGame {join_data}=> {
-              Self::create_game(accounts, _program_id, join_data)
+          RNGProgramInstruction::CreateGame {data}=> {
+              Self::create_game(accounts, _program_id, data)
           },
           RNGProgramInstruction::JoinGame {join_data } => {
-              Self::join_game(accounts, _program_id, join_data )
+              Self::join_game(accounts, _program_id, join_data)
           },
           RNGProgramInstruction::MakeMove { x, y } => {
               Self::make_move(accounts, _program_id, x, y)
@@ -183,7 +183,7 @@ use solana_program::{
       pub fn create_game (
         accounts: &[AccountInfo],
         program_id: &Pubkey,
-        data: JoinGame,
+        data: CreateGame,
       ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer = next_account_info(account_info_iter)?;
@@ -201,10 +201,14 @@ use solana_program::{
 
       game_id_account_read.game_id = game_id_account_read.game_id.checked_add(1).ok_or(ProgramError::InvalidArgument)?;
       
+      msg!("gameId -> {} " , game_id_account_read.game_id);
+      
       let (game_pda, bump) = Pubkey::find_program_address(
-          &[b"game", &player_read.player_address],
+          &[b"game", &game_id_account_read.game_id.to_be_bytes()],
           program_id,
       );
+
+      msg!("gameId -> {} " , game_pda);
 
          if game_pda != *game.key {
           msg!("Provided game account does not match derived PDA.");
@@ -235,7 +239,7 @@ use solana_program::{
               program_id,
           ),
           &[game.clone(), payer.clone()],
-          &[&[b"game", &player_read.player_address, &[bump]]], 
+          &[&[b"game", &game_id_account_read.game_id.to_le_bytes(), &[bump]]], 
       )?;
       msg!("New game account created.");
       }
@@ -269,11 +273,10 @@ use solana_program::{
     Ok(())
       }
 
-
       pub fn join_game (
         accounts: &[AccountInfo],
         program_id: &Pubkey,
-        data: JoinGame,
+        join_data: JoinGame,
        ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer = next_account_info(account_info_iter)?;
@@ -288,7 +291,7 @@ use solana_program::{
         let player_read = Player::try_from_slice(&player.data.borrow())?;
 
         let (game_pda, _bump) = Pubkey::find_program_address(
-            &[b"game", &player_read.player_address],
+            &[b"game", &join_data.game_counter.to_be_bytes()],
             program_id,
         );
 
@@ -305,18 +308,18 @@ use solana_program::{
            return Err(ProgramError::InvalidArgument);
          }
          
-         if data.deposit_amount <= 0 {
+         if join_data.deposit_amount <= 0 {
           msg!("Invalid deposit amount.");
           return Err(ProgramError::InvalidArgument);
          }
 
          game_info.player2 = player_read.player_address;
-         game_info.prize_pool = game_info.prize_pool.checked_add(data.deposit_amount).ok_or(ProgramError::InvalidArgument)?;
+         game_info.prize_pool = game_info.prize_pool.checked_add(join_data.deposit_amount).ok_or(ProgramError::InvalidArgument)?;
         
          let transfer = system_instruction::transfer(
           payer.key, 
           game.key,
-          data.deposit_amount);
+          join_data.deposit_amount);
       
          invoke(
           &transfer,
@@ -325,7 +328,8 @@ use solana_program::{
 
         
         game_info.serialize(&mut &mut game.try_borrow_mut_data()?[..])?;
-
+        player_read.serialize(&mut &mut player.try_borrow_mut_data()?[..])?;
+        
         msg!("Player 2 has joined the game. Game is now active!");
 
       Ok(())
@@ -519,27 +523,27 @@ use solana_program::{
     )-> ProgramResult{
       let account_info_iter = &mut accounts.iter();
       let payer = next_account_info(account_info_iter)?;
-      // let game_id = next_account_info(account_info_iter)?;
+      let game_id = next_account_info(account_info_iter)?;
       // let player_count = next_account_info(account_info_iter)?;
-      let game = next_account_info(account_info_iter)?;
+      // let game = next_account_info(account_info_iter)?;
 
-    //   if game_id.owner != program_id {
-    //     return Err(ProgramError::IncorrectProgramId);
-    //  }
+      if game_id.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+     }
 
       //  if player_count.owner != program_id {
       // return Err(ProgramError::IncorrectProgramId);
       // }
       
-      if game.owner != program_id {
-        return Err(ProgramError::IncorrectProgramId);
-        }
+      // if game.owner != program_id {
+      //   return Err(ProgramError::IncorrectProgramId);
+      //   }
 
       //pda'daki lamports mijtarini aliriz
-      let lamports  = **game.try_borrow_lamports()?; 
+      let lamports  = **game_id.try_borrow_lamports()?; 
 
       // game id 'nin rentini kim olusturduysa ona geri gondererek silebilriiz
-      **game.try_borrow_mut_lamports()? -= lamports;
+      **game_id.try_borrow_mut_lamports()? -= lamports;
       **payer.try_borrow_mut_lamports()? += lamports ;
 
       Ok(())
@@ -548,10 +552,6 @@ use solana_program::{
       
        }
 
-
-
-       // game olusurken  hata aliyorum
-       // join game calismiyr
        
 
 

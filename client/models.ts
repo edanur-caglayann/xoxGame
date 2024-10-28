@@ -140,6 +140,30 @@ export const MakeMoveSchema = new Map([
 export class JoinGame { 
   deposit_amount: bigint = BigInt(0);
   player_address: Uint8Array = new Uint8Array(32);
+  game_counter: number = 0;
+
+  constructor(fields: {deposit_amount: bigint; player_address: Uint8Array; game_counter: number;} | undefined = undefined) {
+    if (fields) {
+      this.deposit_amount = fields.deposit_amount;
+      this.player_address = fields.player_address;
+      this.game_counter = fields.game_counter;
+    } 
+  }
+}
+
+export const JoinGameSchema = new Map([
+  [JoinGame, {
+    kind: "struct",
+    fields: [
+      ["deposit_amount", "u64"],
+      ["player_address", ["u8", 32]],  
+    ]
+  }]
+]);
+
+export class CreateGame { 
+  deposit_amount: bigint = BigInt(0);
+  player_address: Uint8Array = new Uint8Array(32);
 
   constructor(fields: {deposit_amount: bigint; player_address: Uint8Array;} | undefined = undefined) {
     if (fields) {
@@ -149,8 +173,8 @@ export class JoinGame {
   }
 }
 
-export const JoinGameSchema = new Map([
-  [JoinGame, {
+export const CreateGameSchema = new Map([
+  [CreateGame, {
     kind: "struct",
     fields: [
       ["deposit_amount", "u64"],
