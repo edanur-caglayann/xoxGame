@@ -12,7 +12,7 @@ import {
   
   } from "@solana/web3.js";
   import {deserialize, deserializeUnchecked, serialize } from "borsh";
-  import { Player,PlayerSchema,Game,GameSchema, PlayerCount, PlayerCountSchema, GameId, GameIdSchema, JoinGame, JoinGameSchema, CreateGame, CreateGameSchema} from "./models";
+  import { Player,PlayerSchema,Game,GameSchema, PlayerCount, PlayerCountSchema, GameId, GameIdSchema, JoinGame, JoinGameSchema, CreateGame, CreateGameSchema, MakeMove, WinningUser, gameSymbol, MakeMoveSchema} from "./models";
   
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
@@ -250,18 +250,34 @@ import {
     return; 
 }
   const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
+  const rowSeparator = "\n---+----+---\n";
+  let boardDisplay = "";
+
+  for (let i = 0; i < game_data_deserialize.game_board.length; i++) {
+    const displayRow = game_data_deserialize.game_board[i].map(cell => {
+      if (cell === 0) return "  ";
+      if (cell === 1) return "X";
+      if (cell === 2) return "O";
+      return "";
+    }).join(" | ");
+
+    boardDisplay += displayRow;
+    
+    if (i < game_data_deserialize.game_board.length - 1) {
+      boardDisplay += rowSeparator;
+    }
+  }
 
     console.log("Game Id -> " + game_data_deserialize.game_id);
     console.log("Player 1 -> " + game_data_deserialize.player1);
     console.log("Player 2 -> " + game_data_deserialize.player2);
-    console.log("Game Board -> " + game_data_deserialize.game_board);
+    console.log("Game Board -> \n " + boardDisplay);
     console.log("Turn -> " + game_data_deserialize.turn);
     console.log("Prize Pool -> " + game_data_deserialize.prize_pool);
     console.log("Game Active -> " + game_data_deserialize.game_active);
     console.log("--------------------------------------------------------------------------------------------")
 
   }
-
   
   const join_game_acc = async (join_data:JoinGame) => {
     
@@ -324,104 +340,158 @@ import {
     console.log("Address of the player participating in the game => " + player_data_deserialize.player_address);
   };
   
-  // const make_move_acc = async(x: number, y: number) => {
-  //   const game_data = await connection.getAccountInfo(game);
-  //   const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
+  const make_move_acc = async(move_data: MakeMove) => {
+    const encoded = serialize(MakeMoveSchema, move_data);
+    const concat = Uint8Array.of(5, ...encoded);
 
-  //   // const player_data = await connection.getAccountInfo(player);
-  //   // const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
-      
-  //       const instruction = new TransactionInstruction({
-  //         keys: [
-  //             { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-  //             // { pubkey: player, isSigner: false, isWritable: true },
-  //             { pubkey: game, isSigner: false, isWritable: true },
-  //         ],
-  //         data: Buffer.concat([
-  //           Buffer.from([5]), // Örneğin, hamle kodu
-  //           Buffer.from([x]), // Hamle satırını ekleyin
-  //           Buffer.from([y]), // Hamle sütununu ekleyin
-  //       ]),
-  //         programId: program_id
-  //     });
+    const player_count_data = await connection.getAccountInfo(player_count);
+    if (!player_count_data) {
+      throw new Error("Player count data is null or empty");
+    }
+    const player_count_data_deserialize = deserialize(PlayerCountSchema, PlayerCount, player_count_data!.data);
+  
+    const playerPda = PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), Buffer.from(move_data.player_address)],
+      program_id
+    );
+  
+    const player_data = await connection.getAccountInfo(playerPda[0]);
+    if (!player_data) {
+      throw new Error("Player data is null or empty");
+    }
 
-  //     // İşlemi oluştur
-  //     const message = new TransactionMessage({
-  //         instructions: [instruction],
-  //         payerKey: payer.publicKey,
-  //         recentBlockhash: (await connection.getLatestBlockhash()).blockhash
-  //     }).compileToV0Message();
+    const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
+  
+    const gamePda = PublicKey.findProgramAddressSync(
+      [Buffer.from("game"), Buffer.from([move_data.game_counter])],
+      program_id
+    );
 
-  //     const tx = new VersionedTransaction(message);
-  //     tx.sign([payer]);
+   const game_data = await connection.getAccountInfo(gamePda[0]);
+    if (!game_data) {
+      throw new Error("Game data is null or empty");
+    }
+
+    const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);      
+        const instruction = new TransactionInstruction({
+          keys: [
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+              { pubkey: playerPda[0], isSigner: false, isWritable: true },
+              { pubkey: gamePda[0], isSigner: false, isWritable: true },
+          ],
+          data: Buffer.from(concat),
+          programId: program_id
+      });
+
+      const message = new TransactionMessage({
+          instructions: [instruction],
+          payerKey: payer.publicKey,
+          recentBlockhash: (await connection.getLatestBlockhash()).blockhash
+      }).compileToV0Message();
+
+      const tx = new VersionedTransaction(message);
+      tx.sign([payer]);
 
   
-  //   connection.sendTransaction(tx);
-  //   console.log("Make move successful");
-  // }
+    connection.sendTransaction(tx);
+    console.log("Make move successful");
+  }
 
-  // const check_winner_acc = async() => {
-  //   const game_data = await connection.getAccountInfo(game);
-  //   const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
+  const check_winner_acc = async(gameCounter:number) => {
+       const gamePda = PublicKey.findProgramAddressSync(
+      [Buffer.from("game"), Buffer.from([gameCounter])],
+      program_id
+    );
 
-  //   const instruction = new TransactionInstruction({
-  //     keys: [
-  //         { pubkey: game, isSigner: false, isWritable: true },
-  //     ],
-  //     data: Buffer.concat([
-  //       Buffer.from([5]), 
-  //   ]),
-  //     programId: program_id
-  //   });
+   const game_data = await connection.getAccountInfo(gamePda[0]);
+    if (!game_data) {
+      throw new Error("Game data is null or empty");
+    }
 
-  //   const message = new TransactionMessage({
-  //     instructions: [instruction],
-  //     payerKey: payer.publicKey,
-  //     recentBlockhash: (await connection.getLatestBlockhash()).blockhash
-  //   }).compileToV0Message();
+    const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
 
-  //   const tx = new VersionedTransaction(message);
-  //   tx.sign([payer]);
+    const instruction = new TransactionInstruction({
+      keys: [
+        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+        { pubkey: gamePda[0], isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: Buffer.concat([
+        Buffer.from([6]), 
+    ]),
+      programId: program_id
+    });
+
+    const message = new TransactionMessage({
+      instructions: [instruction],
+      payerKey: payer.publicKey,
+      recentBlockhash: (await connection.getLatestBlockhash()).blockhash
+    }).compileToV0Message();
+
+    const tx = new VersionedTransaction(message);
+    tx.sign([payer]);
 
 
-  //   connection.sendTransaction(tx);
-  //   console.log("Check Winner");
+    connection.sendTransaction(tx);
+    console.log("Check Winner");
 
-  // }
+  }
   
-  // const distribute_prize_acc = async() => {
-  //   const game_data = await connection.getAccountInfo(game);
-  //   const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data);
+  const distribute_prize_acc = async(winner_data: WinningUser) => {
+    const player_count_data = await connection.getAccountInfo(player_count);
+    if (!player_count_data) {
+      throw new Error("Player count data is null or empty");
+    }
+    const player_count_data_deserialize = deserialize(PlayerCountSchema, PlayerCount, player_count_data!.data);
+  
+    const playerPda = PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), Buffer.from(winner_data.player_address)],
+      program_id
+    );
+  
+    const player_data = await connection.getAccountInfo(playerPda[0]);
+    if (!player_data) {
+      throw new Error("Player data is null or empty");
+    }
 
-  //   // const player_data = await connection.getAccountInfo(player);
-  //   // const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
-      
-  //       const instruction = new TransactionInstruction({
-  //         keys: [
-  //             { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-  //             { pubkey: game, isSigner: false, isWritable: true },
-  //             // { pubkey: player, isSigner: false, isWritable: true },
-  //         ],
-  //         data: Buffer.concat([
-  //           Buffer.from([5]), 
-  //       ]),
-  //         programId: program_id
-  //     });
+    const player_data_deserialize = deserialize(PlayerSchema, Player, player_data!.data);
+  
+    const gamePda = PublicKey.findProgramAddressSync(
+      [Buffer.from("game"), Buffer.from([winner_data.game_counter])],
+      program_id
+    );
 
-  //     const message = new TransactionMessage({
-  //         instructions: [instruction],
-  //         payerKey: payer.publicKey,
-  //         recentBlockhash: (await connection.getLatestBlockhash()).blockhash
-  //     }).compileToV0Message();
+   const game_data = await connection.getAccountInfo(gamePda[0]);
+    if (!game_data) {
+      throw new Error("Game data is null or empty");
+    }
 
-  //     const tx = new VersionedTransaction(message);
-  //     tx.sign([payer]);
+    const game_data_deserialize = deserialize(GameSchema, Game, game_data!.data); 
+        const instruction = new TransactionInstruction({
+          keys: [
+              { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+              { pubkey: gamePda[0], isSigner: false, isWritable: true },
+              { pubkey: playerPda[0], isSigner: false, isWritable: true },
+          ],
+          data: Buffer.concat([
+            Buffer.from([7]), 
+        ]),
+          programId: program_id
+      });
+
+      const message = new TransactionMessage({
+          instructions: [instruction],
+          payerKey: payer.publicKey,
+          recentBlockhash: (await connection.getLatestBlockhash()).blockhash
+      }).compileToV0Message();
+
+      const tx = new VersionedTransaction(message);
+      tx.sign([payer]);
 
   
-  //   connection.sendTransaction(tx);
-  //   console.log("Distribute prize");
-  // }
-  
+    connection.sendTransaction(tx);
+    console.log("Distribute prize");
+  }
   
   const close_pda = async() => {
     const instruction = new TransactionInstruction ({
@@ -468,7 +538,7 @@ import {
     // player_read(player1Wallet.publicKey.toBytes())
     // player_read(player2Wallet.publicKey.toBytes())
 
-    // game_read(2)
+    game_read(4)
 
   const create_game = new CreateGame();
   create_game.deposit_amount = BigInt(0.0001 * 1_000_000_000);
@@ -479,8 +549,17 @@ import {
   const joinPlayer2 = new JoinGame();
   joinPlayer2.player_address = player2Wallet.publicKey.toBytes();
   joinPlayer2.deposit_amount =  BigInt(0.0001 * 1_000_000_000);
-  joinPlayer2.game_counter =  3;
+  joinPlayer2.game_counter =  4;
 
-  join_game_acc(joinPlayer2)
+  // join_game_acc(joinPlayer2)
+
+  const move_data = new MakeMove();
+  move_data.x = 0;
+  move_data.y = 1;
+  move_data.symbol = gameSymbol.O;
+  move_data.player_address = player2Wallet.publicKey.toBytes();
+  move_data.game_counter = 4;
+  
+  // make_move_acc(move_data)
   // close_pda()
 

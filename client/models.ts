@@ -115,14 +115,23 @@ export const GameIdSchema = new Map([
 export class MakeMove { 
   x: number;  
   y: number;  
+  symbol:number;
+  player_address: Uint8Array = new Uint8Array(32);
+  game_counter: number;
 
-  constructor(fields: {x: number; y: number;} | undefined = undefined) {
+  constructor(fields: {x: number; y: number; symbol:number; player_address: Uint8Array; game_counter:number; } | undefined = undefined) {
     if (fields) {
       this.x = fields.x;
       this.y = fields.y;
+      this.symbol = fields.symbol;
+      this.player_address = fields.player_address;
+      this.game_counter = fields.game_counter;
     } else {
       this.x = 0;  
       this.y = 0;  
+      this.symbol = 0;
+      this.game_counter = 0;
+
     }
   }
 }
@@ -131,8 +140,12 @@ export const MakeMoveSchema = new Map([
   [MakeMove, {
     kind: "struct",
     fields: [
-      ["x", "usize"],
-      ["y", "usize"],  
+      ["x", "u8"],
+      ["y", "u8"],  
+      ["symbol", "u8"],
+      ["player_address", ["u8", 32]],  
+      ["game_counter", "u8"],
+
     ]
   }]
 ]);
@@ -157,6 +170,31 @@ export const JoinGameSchema = new Map([
     fields: [
       ["deposit_amount", "u64"],
       ["player_address", ["u8", 32]],  
+      ["game_counter", "u8"],
+
+    ]
+  }]
+]);
+
+export class WinningUser { 
+  player_address: Uint8Array = new Uint8Array(32);
+  game_counter: number = 0;
+
+  constructor(fields: {player_address: Uint8Array; game_counter: number;} | undefined = undefined) {
+    if (fields) {
+      this.player_address = fields.player_address;
+      this.game_counter = fields.game_counter;
+    } 
+  }
+}
+
+export const WinningUserSchema = new Map([
+  [WinningUser, {
+    kind: "struct",
+    fields: [
+      ["player_address", ["u8", 32]],  
+      ["game_counter", "u8"],
+
     ]
   }]
 ]);
@@ -201,3 +239,9 @@ export const ClosePdaSchema = new Map([
     ]
   }]
 ]);
+
+export enum gameSymbol {
+  empty,
+  X,
+  O,
+}

@@ -34,8 +34,11 @@ pub struct GameId{
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
 pub struct MakeMove{
-    pub x: usize,
-    pub y: usize,
+    pub x: u8,
+    pub y: u8,
+    pub symbol: u8, // 0-> bos, 1->X, 2->Y
+    pub player_address: [u8;32],
+    pub game_counter: u8,
 } 
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
@@ -44,6 +47,13 @@ pub struct JoinGame{
     pub player_address: [u8;32],
     pub game_counter: u8,
 } 
+
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
+pub struct WinningUser{
+    pub player_address: [u8;32],
+    pub game_counter: u8,
+} 
+
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
 pub struct CreateGame{
@@ -57,3 +67,9 @@ pub struct ClosePda{
     pub player_address: [u8;32],
 
 } 
+
+// pub enum PlayerTipe {
+//     Empty,
+//     X,
+//     Y,
+// }

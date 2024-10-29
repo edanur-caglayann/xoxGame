@@ -6,9 +6,9 @@ use core::borrow;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_bigint::BigInt;
 use solana_program::{ 
-    account_info::{next_account_info, AccountInfo}, clock, config, entrypoint::ProgramResult, lamports, msg, program::{invoke, invoke_signed}, program_error::ProgramError, pubkey::{self, Pubkey}, rent::Rent, system_instruction::{self, transfer}, system_program, sysvar::Sysvar
+    account_info::{next_account_info, AccountInfo}, address_lookup_table::instruction, clock, config, entrypoint::ProgramResult, instruction::{AccountMeta, Instruction}, lamports, msg, program::{invoke, invoke_signed}, program_error::ProgramError, pubkey::{self, Pubkey}, rent::Rent, system_instruction::{self, transfer}, system_program, sysvar::Sysvar
     };
-    use crate::{instruction::RNGProgramInstruction, state::{CreateGame, Game, GameId, JoinGame, Player, PlayerCount}};
+    use crate::{instruction::RNGProgramInstruction, state::{CreateGame, Game, GameId, JoinGame, MakeMove, Player, PlayerCount, WinningUser}};
     use crate::error::RNGProgramError::{InvalidInstruction};
     pub struct Processor;
     impl Processor {
@@ -36,14 +36,14 @@ use solana_program::{
           RNGProgramInstruction::JoinGame {join_data } => {
               Self::join_game(accounts, _program_id, join_data)
           },
-          RNGProgramInstruction::MakeMove { x, y } => {
-              Self::make_move(accounts, _program_id, x, y)
+          RNGProgramInstruction::MakeMove { move_data} => {
+              Self::make_move(accounts, _program_id, move_data)
           },
-          RNGProgramInstruction::CheckWinner  => {
-              Self::check_winner(accounts, _program_id)
+          RNGProgramInstruction::CheckWinner {gameCounter} => {
+              Self::check_winner(accounts, _program_id, gameCounter)
           },
-          RNGProgramInstruction::DistributePrize => {
-              Self::distribute_prize(accounts, _program_id)
+          RNGProgramInstruction::DistributePrize {winner_data} => {
+              Self::distribute_prize(accounts, _program_id, winner_data)
           },
           RNGProgramInstruction::ClosePda => { 
             Self::close_pda(accounts, _program_id )
@@ -338,8 +338,7 @@ use solana_program::{
       pub fn make_move(
         accounts: &[AccountInfo],
         program_id: &Pubkey,
-        x: usize, // satir
-        y: usize, // sutun
+        move_data: MakeMove,
       ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer = next_account_info(account_info_iter)?;
@@ -351,25 +350,19 @@ use solana_program::{
           // return Err(AuthorityError.into());
         }
 
-         //odeme yapan kisi ile hamle yapan kis ayni mi
-        if payer.key != player.key {
-          msg!("Payer and player do not match");
-        return Err(ProgramError::InvalidAccountData);
-        }
-
         let player_read = Player::try_from_slice(&player.data.borrow())?;
         let mut game_read = Game::try_from_slice(&game.data.borrow())?;
 
-        if game.key != program_id {
+        if game.owner != program_id {
           msg!("This game does not belong to the current program");
           return Err(ProgramError::IncorrectProgramId);
           
         } 
 
-        if game_read.game_active == 0 {
-          msg!("Game is not active");
-          return Err(ProgramError::InvalidAccountData);
-        }
+        // if game_read.game_active == 0 {
+        //   msg!("Game is not active");
+        //   return Err(ProgramError::InvalidAccountData);
+        // }
 
         // hamle sirasi dogru ksiide mi
         let player_index = if game_read.player1 == player_read.player_address {
@@ -389,14 +382,16 @@ use solana_program::{
        }
 
         // tahtadaki alan bos mu
-       if game_read.game_board[x][y] != 0 {
+       if game_read.game_board[move_data.x as usize][move_data.y as usize] != 0 {
         msg!("This spot is already taken");
         return Err(ProgramError::InvalidInstructionData);
         }
 
-        // hamle yapma sirasini degistir
-        game_read.game_board[x][y] = player_index as u8 + 1;
-        game_read.turn = 1 -  game_read.turn; // sirayi diger oyuncuya ver
+        // hamle yapildi
+        game_read.game_board[move_data.x as usize][move_data.y as usize] = move_data.symbol;
+      
+       // hamle yapma sirasini degistir
+        game_read.turn = 1 -  game_read.turn; 
 
         game_read.serialize(&mut &mut game.try_borrow_mut_data()?[..])?;
         player_read.serialize(&mut &mut player.try_borrow_mut_data()?[..])?;
@@ -408,11 +403,14 @@ use solana_program::{
       pub fn check_winner(
       accounts: &[AccountInfo],
       program_id: &Pubkey,
+      gameCounter: u8,
      ) -> ProgramResult {
      let account_info_iter = &mut accounts.iter();
      let game = next_account_info(account_info_iter)?;
 
       let mut game_read = Game::try_from_slice(&game.data.borrow())?;
+
+      let mut winner:u8 = 0;
 
         // Oyun durumu kontrolü
      if game_read.game_active == 0 {
@@ -421,12 +419,12 @@ use solana_program::{
      }
 
      for i in 0..3 {
-      // Satır kontrolü
+      // Satr kontrolü
       if game_read.game_board[i][0] != 0 &&
          game_read.game_board[i][0] == game_read.game_board[i][1] &&
          game_read.game_board[i][1] == game_read.game_board[i][2] {
           game_read.game_active = 0;
-          let winner = game_read.game_board[i][0];
+          winner = game_read.turn;
           msg!("Winner is Player {}", winner);
           break; // Kazanan belirlendikten sonra döngüyü kır
       }
@@ -436,7 +434,7 @@ use solana_program::{
          game_read.game_board[0][i] == game_read.game_board[1][i] &&
          game_read.game_board[1][i] == game_read.game_board[2][i] {
           game_read.game_active = 0; 
-          let winner = game_read.game_board[0][i];
+          winner = game_read.turn;
           msg!("Winner is Player {}", winner);
           break; // Kazanan belirlendikten sonra döngüyü kır
       }
@@ -448,7 +446,7 @@ use solana_program::{
      game_read.game_board[0][0] == game_read.game_board[1][1] &&
      game_read.game_board[1][1] == game_read.game_board[2][2] {
       game_read.game_active = 0; 
-      let winner = game_read.game_board[0][0];
+     winner = game_read.turn;
       msg!("Winner is Player {}", winner);
   }
 
@@ -457,11 +455,24 @@ use solana_program::{
      game_read.game_board[0][2] == game_read.game_board[1][1] &&
      game_read.game_board[1][1] == game_read.game_board[2][0] {
       game_read.game_active = 0;
-      let winner = game_read.game_board[0][2];
+      winner = game_read.turn;
       msg!("Winner is Player {}", winner);
   }
 
+   if game_read.game_active == 0 && winner == 0 {
+    msg!("1st player to win");
+    msg!("winning player's address -> {:?} " , game_read.player1);
+   }
 
+   if game_read.game_active == 0 && winner == 1 {
+    msg!("2st player to win");
+    msg!("winning player's address ->{:?} " , game_read.player2);
+   }
+    
+   if game_read.game_active == 1{
+    msg!("It's the other player's turn to move")
+   }
+   
     game_read.serialize(&mut &mut game.try_borrow_mut_data()?[..])?;
     Ok(())
 }
@@ -469,6 +480,7 @@ use solana_program::{
       pub fn distribute_prize(
         accounts: &[AccountInfo],
         program_id: &Pubkey,
+        winner_data: WinningUser,
       ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer = next_account_info(account_info_iter)?;
@@ -491,8 +503,30 @@ use solana_program::{
             // return Err(OwnershipError.into());
             }
 
+            let (game_pda, _bump) = Pubkey::find_program_address(
+              &[b"game", &winner_data.game_counter.to_be_bytes()],
+              program_id,
+          );
+  
+          // pda ile game hesabi uyusuyor mu
+          if game_pda != *game.key {
+            msg!("Provided game account does not match derived PDA.");
+          return Err(ProgramError::InvalidArgument);
+          }
 
-        let mut game_read = Game::try_from_slice(&game.data.borrow())?;
+          let (player_pda, bump) = Pubkey::find_program_address(
+            &[b"player", &winner_data.player_address],
+            program_id,
+          );
+        
+  
+         if player_pda != *player.key {
+            msg!("Provided player account does not match derived PDA.");
+            return Err(ProgramError::InvalidArgument);
+         }
+            // winneri kontrol et
+
+        let game_read = Game::try_from_slice(&game.data.borrow())?;
         let player_read = Player::try_from_slice(&player.data.borrow())?;
 
         if game_read.game_active == 0 {

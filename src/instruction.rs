@@ -1,4 +1,4 @@
-use crate::{error::RNGProgramError::InvalidInstruction, state::{CreateGame, Game, JoinGame, MakeMove, Player}, };
+use crate::{error::RNGProgramError::InvalidInstruction, state::{CreateGame, Game, JoinGame, MakeMove, Player, WinningUser}, };
 use borsh::BorshDeserialize;
 use solana_program::{msg, program_error::ProgramError};
 
@@ -9,9 +9,9 @@ pub enum RNGProgramInstruction {
   CreatePlayer{player_address: [u8;32]},
   CreateGame{data: CreateGame},
   JoinGame {join_data: JoinGame},
-  MakeMove {x:usize, y:usize},
-  CheckWinner,
-  DistributePrize,
+  MakeMove {move_data: MakeMove},
+  CheckWinner{gameCounter: u8},
+  DistributePrize{winner_data:WinningUser},
   ClosePda,
 }
 
@@ -35,15 +35,18 @@ impl RNGProgramInstruction {
         4 => Self::JoinGame {
             join_data:JoinGame::try_from_slice(&rest)?,
         },
-        5 => {
-            let make_move_data = MakeMove::try_from_slice(&rest).map_err(|_| InvalidInstruction)?;
-            Self::MakeMove {
-                x: make_move_data.x,
-                y: make_move_data.y,
+        5 => Self::MakeMove {
+            move_data:MakeMove::try_from_slice(&rest)?,
+        },
+        6 => {
+            let gameCounter = u8::try_from_slice(&rest).map_err(|_| InvalidInstruction)?;
+            Self::CheckWinner {
+                gameCounter: gameCounter,
             }
         },
-        6 => Self::CheckWinner,
-        7 => Self::DistributePrize,
+        7 => Self::DistributePrize {
+            winner_data: WinningUser::try_from_slice(&rest)?,
+        },
         8 => Self::ClosePda,
         _ => return Err(InvalidInstruction.into()),
     })
